@@ -5,7 +5,16 @@ using System.Text;
 
 namespace OpenIndexer.ZVec;
 
-/// <summary>A typed persistent ZVec collection backed by the native ZVec C API.</summary>
+/// <summary>Provides a typed persistent collection backed by the native ZVec C API.</summary>
+/// <typeparam name="TSchema">The document schema stored in the collection.</typeparam>
+/// <remarks>Operations on one instance are serialized. Native calls are synchronous and cannot be interrupted after they start. <typeparamref name="TSchema"/> must satisfy the materialization requirements documented by <see cref="ZVecCollectionSchema"/>.</remarks>
+/// <example>
+/// <code>
+/// await using var collection = await ZVecCollection&lt;Article&gt;.CreateOrOpenAsync("./articles");
+/// await collection.UpsertAsync(article);
+/// var results = await collection.QueryAsync(nameof(Article.Embedding), embedding, topK: 10);
+/// </code>
+/// </example>
 public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable where TSchema : ZVecCollectionSchema
 {
     private readonly ZVecCollectionHandle handle;
@@ -19,11 +28,26 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         this.options = options;
     }
 
-    /// <summary>Opens an existing collection or creates it from <typeparamref name="TSchema"/> metadata.</summary>
+    /// <summary>Opens an existing collection or creates one from <typeparamref name="TSchema"/> metadata.</summary>
+    /// <param name="path">The collection directory.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing the opened collection.</returns>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is empty or consists only of white-space characters.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> is canceled before the native operation completes.</exception>
+    /// <exception cref="ZVecException">The native backend cannot create or open the collection.</exception>
     public static Task<ZVecCollection<TSchema>> CreateOrOpenAsync(string path, CancellationToken cancellation = default) =>
         CreateOrOpenAsync(path, new ZVecCollectionOptions(), cancellation);
 
     /// <summary>Opens or creates a collection using explicit persisted index settings.</summary>
+    /// <param name="path">The collection directory.</param>
+    /// <param name="options">Creation settings and reopening-validation behavior.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing the opened collection.</returns>
+    /// <exception cref="ArgumentException"><paramref name="path"/> or an option is invalid.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> is canceled before the native operation completes.</exception>
+    /// <exception cref="ZVecCompatibilityException">A requested feature is incompatible with the loaded native runtime.</exception>
+    /// <exception cref="ZVecException">The native backend cannot create, open, or validate the collection.</exception>
     public static Task<ZVecCollection<TSchema>> CreateOrOpenAsync(string path, ZVecCollectionOptions options, CancellationToken cancellation = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -72,6 +96,13 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
     }
 
     /// <summary>Inserts or replaces a document by its <see cref="ZVecCollectionSchema.Id"/>.</summary>
+    /// <param name="data">The document to store.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A value task representing the operation.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The identifier or a vector value is invalid.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend rejects the document.</exception>
     public ValueTask UpsertAsync(TSchema data, CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -89,7 +120,13 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         }, cancellation));
     }
 
-    /// <summary>Deletes a document by identifier.</summary>
+    /// <summary>Deletes a document by identifier and succeeds when it does not exist.</summary>
+    /// <param name="id">The persistent document identifier.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A value task representing the operation.</returns>
+    /// <exception cref="ArgumentException"><paramref name="id"/> is empty or consists only of white-space characters.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot fetch or delete the document.</exception>
     public ValueTask DeleteAsync(string id, CancellationToken cancellation = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -117,6 +154,12 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
     }
 
     /// <summary>Gets one document, or <see langword="null"/> when the identifier does not exist.</summary>
+    /// <param name="id">The persistent document identifier.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A value task containing the document, or <see langword="null"/> when it was not found.</returns>
+    /// <exception cref="ArgumentException"><paramref name="id"/> is empty or consists only of white-space characters.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot fetch the document.</exception>
     public ValueTask<TSchema?> GetAsync(string id, CancellationToken cancellation = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -138,7 +181,14 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         }, cancellation));
     }
 
-    /// <summary>Enumerates all documents present when enumeration starts.</summary>
+    /// <summary>Enumerates a materialized snapshot of the documents present when enumeration starts.</summary>
+    /// <param name="cancellation">A token observed before the native query and between yielded documents.</param>
+    /// <returns>An asynchronous sequence of documents.</returns>
+    /// <remarks>The native query materializes all documents in managed memory before the first item is yielded.</remarks>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> is canceled before materialization or between yielded documents.</exception>
+    /// <exception cref="NotSupportedException">The collection contains more than <see cref="int.MaxValue"/> documents.</exception>
+    /// <exception cref="ZVecException">The native backend cannot list the documents.</exception>
     public async IAsyncEnumerable<TSchema> ListAsync([EnumeratorCancellation] CancellationToken cancellation = default)
     {
         var documents = await ExecuteAsync(ReadAllDocuments, cancellation).ConfigureAwait(false);
@@ -149,11 +199,29 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         }
     }
 
-    /// <summary>Executes a top-K nearest-neighbor search using the index defaults.</summary>
+    /// <summary>Executes a top-K nearest-neighbor search using the persisted index defaults.</summary>
+    /// <param name="fieldName">The vector property name.</param>
+    /// <param name="vector">The query vector, whose length must match the field dimensions.</param>
+    /// <param name="topK">The positive maximum number of results.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing the ranked results.</returns>
+    /// <exception cref="ArgumentException">The field, vector, or result count is invalid.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot execute the query.</exception>
     public Task<IList<ZVecQueryResult>> QueryAsync(string fieldName, ReadOnlyMemory<float> vector, int topK, CancellationToken cancellation = default) =>
         QueryAsync(fieldName, vector, topK, queryOptions: null, cancellation);
 
     /// <summary>Executes a top-K nearest-neighbor search with explicit search-time index settings.</summary>
+    /// <param name="fieldName">The vector property name.</param>
+    /// <param name="vector">The query vector, whose length must match the field dimensions.</param>
+    /// <param name="topK">The positive maximum number of results.</param>
+    /// <param name="queryOptions">Search parameters matching the persisted index type, or <see langword="null"/> for native defaults.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing the ranked results.</returns>
+    /// <exception cref="ArgumentException">The field, vector, result count, or query-option type is invalid.</exception>
+    /// <exception cref="ZVecCompatibilityException">RaBitQ query support is incompatible with the loaded native runtime.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot execute the query.</exception>
     public Task<IList<ZVecQueryResult>> QueryAsync(string fieldName, ReadOnlyMemory<float> vector, int topK, ZVecVectorQueryOptions? queryOptions, CancellationToken cancellation = default)
     {
         ValidateQuery(fieldName, vector, topK, queryOptions);
@@ -161,6 +229,15 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
     }
 
     /// <summary>Executes a full-text search over a field configured with <see cref="ZVecFullTextIndexOptions"/>.</summary>
+    /// <param name="fieldName">The full-text indexed property name.</param>
+    /// <param name="queryOptions">The full-text request. Exactly one of match text or structured query must be supplied.</param>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing ranked documents without vector-property values.</returns>
+    /// <remarks>Vector properties are omitted from materialized full-text results.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="queryOptions"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The field or full-text request is invalid.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot execute the query.</exception>
     public Task<IList<ZVecQueryResult>> FullTextQueryAsync(string fieldName, ZVecFullTextQueryOptions queryOptions, CancellationToken cancellation = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
@@ -176,14 +253,33 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
     }
 
     /// <summary>Runs ZVec's synchronous index rebuild and segment merge on a worker thread.</summary>
+    /// <param name="cancellation">A token observed before the native operation starts.</param>
+    /// <returns>A value task representing the operation.</returns>
+    /// <remarks>The native operation cannot be canceled after it starts and does not expose progress.</remarks>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot optimize the collection.</exception>
     public ValueTask OptimizeAsync(CancellationToken cancellation = default) =>
         new(ExecuteAsync(() => NativeMethods.ThrowIfError(NativeMethods.CollectionOptimize(handle)), cancellation));
 
     /// <summary>Returns a managed snapshot of document count and vector-index completeness.</summary>
+    /// <param name="cancellation">A token observed before and while scheduling the native operation.</param>
+    /// <returns>A task containing the statistics snapshot.</returns>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot read collection statistics.</exception>
     public Task<ZVecCollectionStats> GetStatsAsync(CancellationToken cancellation = default) =>
         ExecuteAsync(ReadStats, cancellation);
 
     /// <summary>Executes independent top-K searches and flattens their results with <see cref="ZVecQueryResult.QueryIndex"/>.</summary>
+    /// <param name="fieldName">The vector property name.</param>
+    /// <param name="vectors">One or more query vectors whose lengths match the field dimensions.</param>
+    /// <param name="topK">The positive maximum number of results per vector.</param>
+    /// <param name="cancellation">A token observed before each native query.</param>
+    /// <returns>A task containing flattened results in input-vector order.</returns>
+    /// <remarks>Queries run sequentially and use persisted index defaults; this overload is not a native batch operation.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="vectors"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">No vectors are supplied, or a field, vector, or result count is invalid.</exception>
+    /// <exception cref="ObjectDisposedException">The collection has been disposed.</exception>
+    /// <exception cref="ZVecException">The native backend cannot execute a query.</exception>
     public Task<IList<ZVecQueryResult>> QueryAsync(string fieldName, IReadOnlyList<ReadOnlyMemory<float>> vectors, int topK, CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(vectors);
@@ -201,6 +297,8 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         }, cancellation);
     }
 
+    /// <summary>Releases the native collection handle after any active operation completes.</summary>
+    /// <remarks>This method is idempotent. Subsequent operations throw <see cref="ObjectDisposedException"/>.</remarks>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
@@ -209,6 +307,9 @@ public sealed class ZVecCollection<TSchema> : IDisposable, IAsyncDisposable wher
         finally { gate.Release(); gate.Dispose(); }
     }
 
+    /// <summary>Asynchronously waits for any active operation and releases the native collection handle.</summary>
+    /// <returns>A value task representing asynchronous disposal.</returns>
+    /// <remarks>This method is idempotent. Handle release is synchronous; asynchronous waiting applies to the collection's serialization gate.</remarks>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;

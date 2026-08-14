@@ -1,27 +1,29 @@
 # OpenIndexer.ZVec
 
-Bindings C# tipados para a C API nativa do [ZVec](https://github.com/alibaba/zvec). A biblioteca usa P/Invoke diretamente sobre `zvec_c_api` e não implementa armazenamento alternativo ou em memória.
+Typed C# bindings for the native [ZVec](https://github.com/alibaba/zvec) C API. The library uses P/Invoke directly against `zvec_c_api` and does not implement alternative or in-memory storage.
 
-## Instalação e runtime nativo
+## Installation and native runtime
+
+OpenIndexer.ZVec currently targets `net10.0`, so consumers need a .NET 10-compatible project and runtime. The first public package has not been released yet. After it is published to NuGet.org, install it with:
 
 ```bash
 dotnet add package OpenIndexer.ZVec
 ```
 
-O pacote NuGet inclui runtimes nativos pré-compilados e os copia para a saída da aplicação; o consumidor não precisa compilar o ZVec:
+Published NuGet packages are designed to include precompiled native runtimes and copy the matching asset to the application output; consumers will not need to compile ZVec:
 
-| RID | Biblioteca | HNSW-RaBitQ |
+| RID | Library | HNSW-RaBitQ |
 | --- | --- | --- |
-| `win-x64` | `zvec_c_api.dll` | Não |
-| `linux-x64` | `libzvec_c_api.so` | Sim, em CPUs AVX2 ou superiores |
-| `linux-arm64` | `libzvec_c_api.so` | Não |
-| `osx-arm64` | `libzvec_c_api.dylib` | Não |
+| `win-x64` | `zvec_c_api.dll` | No |
+| `linux-x64` | `libzvec_c_api.so` | Yes, on AVX2 or newer CPUs |
+| `linux-arm64` | `libzvec_c_api.so` | No |
+| `osx-arm64` | `libzvec_c_api.dylib` | No |
 
-Todos os runtimes são compilados do submodule ZVec fixado em `ec8a78ee08b14a0b8c94158ffc1de42cd3f97f6d` e contêm a extensão ABI versionada deste repositório. Em plataformas sem suporte upstream, a extensão informa que RaBitQ está indisponível; ela nunca converte silenciosamente a solicitação em Flat. Os ZIPs nativos, checksums SHA-256 e pacotes NuGet de cada versão ficam disponíveis na [GitHub Release](https://github.com/CypherPotato/zvec-dotnet-sdk/releases) correspondente.
+Release runtimes are built from the ZVec submodule pinned to `ec8a78ee08b14a0b8c94158ffc1de42cd3f97f6d` and include this repository's versioned ABI extension. The managed binding rejects RaBitQ before collection creation unless the process is Linux x64 with AVX2; eligible Linux hosts then pass extension version, commit, and capability checks. It never silently converts the request to Flat. Once a version is published, its native ZIP files, SHA-256 checksums, and NuGet packages will be attached to the corresponding [GitHub Release](https://github.com/CypherPotato/zvec-dotnet-sdk/releases).
 
-A ABI suportada é **ZVec C API 0.6.x**. O carregamento falha explicitamente para outra linha de versão 0.x. Os avisos e licenças upstream acompanham o pacote em `THIRD-PARTY-NOTICES.md` e `licenses/`.
+The supported ABI is **ZVec C API 0.6.x**. Loading explicitly fails for a different 0.x version line. Upstream notices and licenses are included in the package under `THIRD-PARTY-NOTICES.md` and `licenses/`.
 
-Para substituir o runtime empacotado, defina `ZVEC_LIBRARY_PATH` como o arquivo da biblioteca ou como o diretório que o contém:
+To override the packaged runtime, set `ZVEC_LIBRARY_PATH` to either the library file or the directory containing it:
 
 ```powershell
 $env:ZVEC_LIBRARY_PATH = "C:\native\zvec_c_api.dll"
@@ -31,31 +33,31 @@ $env:ZVEC_LIBRARY_PATH = "C:\native\zvec_c_api.dll"
 export ZVEC_LIBRARY_PATH=/opt/zvec/libzvec_c_api.so
 ```
 
-O loader procura primeiro o override configurado e depois o nome nativo no diretório da aplicação e em `runtimes/<RID>/native`:
+The loader first checks the configured override, then searches for the native name in the application directory and under `runtimes/<RID>/native`:
 
 - `zvec_c_api.dll`
 - `libzvec_c_api.so`
 - `libzvec_c_api.dylib`
 
-Para os índices expostos pela C API stock, a biblioteca oficial pode ser compilada diretamente do tag v0.6.0. HNSW-RaBitQ exige a extensão versionada deste repositório porque o factory C stock transforma o tipo solicitado `4` em Flat (`3`) e não exporta os tipos próprios de construção/query.
+For indexes exposed by the stock C API, the official library can be built directly from the v0.6.0 tag. HNSW-RaBitQ requires this repository's versioned extension because the stock C factory converts requested type `4` to Flat (`3`) and does not export the dedicated build and query parameter types.
 
-A extensão não é uma segunda biblioteca: `bindings/native/zvec_rabitq_extension.cc` é compilado dentro do mesmo target fat `zvec_c_api`, no commit ZVec fixado. Isso mantém criação, RTTI, ownership, `shared_ptr`, registries e destruição no mesmo módulo.
+The extension is not a second library: `bindings/native/zvec_rabitq_extension.cc` is compiled into the same fat `zvec_c_api` target at the pinned ZVec commit. This keeps creation, RTTI, ownership, `shared_ptr`, registries, and destruction within the same module.
 
-## Código-fonte e releases
+## Source code and releases
 
-- `core/zvec/`: submodule oficial `alibaba/zvec`, fixado no commit validado.
-- `bindings/dotnet/`: binding gerenciado e projeto NuGet.
-- `bindings/native/`: extensão C ABI versionada para HNSW-RaBitQ.
-- `scripts/build-native.ps1`: build nativo local por RID, sem Docker.
-- `.github/workflows/release.yml`: matriz nativa, validação, GitHub Release e empacotamento NuGet.
+- `core/zvec/`: official `alibaba/zvec` submodule pinned to the validated commit.
+- `bindings/dotnet/`: managed binding and NuGet project.
+- `bindings/native/`: versioned C ABI extension for HNSW-RaBitQ.
+- `scripts/build-native.ps1`: local native build by RID, without Docker.
+- `.github/workflows/release.yml`: native matrix, validation, GitHub Release, and NuGet packaging.
 
-Tags `v*` compilam cada runtime em um runner da própria plataforma. O job de empacotamento baixa os ZIPs da GitHub Release em draft, valida `SHA256SUMS.txt`, extrai exatamente os quatro RIDs e só então executa `dotnet pack`. O `.nupkg` não baixa código ou binários durante restore nem em runtime.
+Tags matching `v*` build each runtime on a runner for its own platform. The packaging job downloads the ZIP files from the draft GitHub Release, validates `SHA256SUMS.txt`, extracts exactly the four RIDs, and only then runs `dotnet pack`. The `.nupkg` does not download code or binaries during restore or at runtime.
 
-A publicação no NuGet.org é deliberadamente separada: o workflow `Publish NuGet` recebe uma tag já publicada, baixa novamente os assets dessa GitHub Release, verifica os checksums, recria o pacote e envia com o secret `NUGET_API_KEY`. Assim, nenhuma compilação nativa ocorre durante a publicação e uma falha de credencial não invalida a release de binários.
+Publishing to NuGet.org is deliberately separate: the `Publish NuGet` workflow receives an already published tag, downloads the assets from that GitHub Release again, verifies their checksums, recreates the package, and pushes it using the `NUGET_API_KEY` secret. This ensures that no native compilation occurs during publication and that a credential failure does not invalidate the binary release.
 
-## Uso
+## Usage
 
-Todo schema possui um identificador persistente obrigatório por meio de `ZVecCollectionSchema.Id`. Propriedades escalares suportadas são `string`, `bool`, `int`, `long`, `uint`, `ulong`, `float` e `double`. Vetores são `float[]` marcados com `ZVecVector`.
+Every schema has a required persistent identifier through `ZVecCollectionSchema.Id`. Supported scalar properties are `string`, `bool`, `int`, `long`, `uint`, `ulong`, `float`, and `double`. Vectors are `float[]` properties marked with `ZVecVector`.
 
 ```csharp
 public sealed class Article : ZVecCollectionSchema
@@ -81,7 +83,7 @@ var results = await articles.QueryAsync(
     topK: 20);
 ```
 
-Índices e parâmetros de construção podem ser definidos explicitamente por campo. Os defaults publicados pelo binding são os defaults reais da ABI 0.6, por exemplo HNSW `M=50` e `EfConstruction=500`:
+Indexes and build parameters can be configured explicitly per field. The defaults published by the binding are the actual ABI 0.6 defaults, such as HNSW `M=50` and `EfConstruction=500`:
 
 ```csharp
 var options = new ZVecCollectionOptions
@@ -115,7 +117,7 @@ await configured.OptimizeAsync();
 var stats = await configured.GetStatsAsync();
 ```
 
-Opções de índice disponíveis: Flat, HNSW, HNSW-RaBitQ, IVF, DiskANN, inverted e full-text. Índices vetoriais comuns aceitam quantização FP16, INT8 e INT4; rotação é válida com INT8/INT4. HNSW-RaBitQ usa obrigatoriamente sua própria quantização e rejeita quantização genérica/rotation. Os parâmetros de query são tipos distintos e precisam corresponder ao índice persistido.
+Available index options are Flat, HNSW, HNSW-RaBitQ, IVF, DiskANN, inverted, and full-text. Standard vector indexes support FP16, INT8, and INT4 quantization; rotation is valid with INT8 and INT4. HNSW-RaBitQ always uses its own quantization and rejects generic quantization or rotation. Query parameters are distinct types and must match the index type configured for the current `ZVecCollection` instance. With the default `ValidateExistingSchema = true`, that configuration is checked against the persisted index; disabling validation removes this guarantee.
 
 ### HNSW-RaBitQ
 
@@ -142,19 +144,40 @@ var results = await collection.QueryAsync(
     new ZVecHnswRaBitQQueryOptions { Ef = 300 });
 ```
 
-Requisitos reais do backend ZVec 0.6: Linux x86_64, CPU AVX2 ou superior, vetor FP32 denso com 64–4095 dimensões e métrica L2, InnerProduct ou Cosine. Faixas validadas: `TotalBits` 1–9, `ClusterCount > 0`, `M` 5–1024, `EfConstruction` 1–2048, `SampleCount >= 0` (`0` usa todos os vetores) e query `Ef` 1–2048. Defaults: 7, 16, 50, 500, 0 e 300, respectivamente.
+Actual ZVec 0.6 backend requirements are Linux x86_64, an AVX2 or newer CPU, dense FP32 vectors with 64–4095 dimensions, and the L2, InnerProduct, or Cosine metric. Validated ranges are `TotalBits` 1–9, `ClusterCount > 0`, `M` 5–1024, `EfConstruction` 1–2048, `SampleCount >= 0` (`0` uses all vectors), and query `Ef` 1–2048. The respective defaults are 7, 16, 50, 500, 0, and 300.
 
-Na criação e reabertura, o binding lê o tipo efetivo do handle/schema. Se RaBitQ resultar em Flat ou qualquer outro tipo, lança `ZVecCompatibilityException`; nunca rotula o índice pelo tipo solicitado. A exceção inclui versão nativa, plataforma, arquitetura, caminho da biblioteca, recurso solicitado, tipo efetivo quando disponível e motivo técnico.
+During creation, the binding validates the effective type returned by the native index-parameter factory. During reopening, it validates the persisted schema's index type and RaBitQ parameters. If RaBitQ resolves to Flat or any other type, it throws `ZVecCompatibilityException`; it never labels the index using only the requested type. The exception includes the native version, platform, architecture, library path, requested feature, effective type when available, and technical reason.
 
-`ZVecFullTextIndexOptions` configura tokenizer, filtros e parâmetros extras JSON. `FullTextQueryAsync` executa `Match` natural ou `Query` estruturada. `Filter` nos parâmetros de consulta vetorial usa a expressão nativa do ZVec e aproveita índices inverted.
+`ZVecFullTextIndexOptions` configures the tokenizer, filters, and additional JSON parameters. `FullTextQueryAsync` executes either natural `Match` or structured `Query`. `Filter` in vector query parameters uses ZVec's native expression syntax and benefits from inverted indexes.
 
-`CreateOrOpenAsync` retorna `Task<ZVecCollection<TSchema>>` e desloca a chamada síncrona nativa para o thread pool. Operações sobre uma instância são serializadas para proteger o handle nativo e capturar erros `thread_local` no mesmo thread da chamada.
+`CreateOrOpenAsync` returns `Task<ZVecCollection<TSchema>>` and offloads the synchronous native call to the thread pool. Operations on an instance are serialized to protect the native handle and capture `thread_local` errors on the same thread as the call.
 
-A sobrecarga com `IReadOnlyList<ReadOnlyMemory<float>>` executa uma busca top-K independente por vetor. A lista retornada é achatada; `ZVecQueryResult.QueryIndex` identifica o vetor de entrada correspondente.
+The overload accepting `IReadOnlyList<ReadOnlyMemory<float>>` performs an independent top-K search for each vector. The returned list is flattened; `ZVecQueryResult.QueryIndex` identifies the corresponding input vector.
 
-`ListAsync` usa uma consulta nativa sem vetor, suportada pelo ZVec, com `topK` igual ao número atual de documentos. A consulta é um snapshot materializado; o `CancellationToken` é observado antes do trabalho e entre itens produzidos. A C API 0.6 não oferece cancelamento cooperativo de uma chamada nativa já iniciada.
+`ListAsync` uses a native vectorless query supported by ZVec, with `topK` equal to the current document count. The query is a materialized snapshot; the `CancellationToken` is observed before work begins and between yielded items. C API 0.6 does not provide cooperative cancellation for an already running native call.
 
-## Build e testes
+## Error handling
+
+Native failures are reported as `ZVecException`; inspect `ErrorCode` to distinguish invalid arguments, unavailable resources, unsupported operations, and internal failures. `ZVecCompatibilityException` describes native version, platform, architecture, symbol, and effective-index incompatibilities. Schema and query validation use standard argument or invalid-operation exceptions, and calls after disposal throw `ObjectDisposedException`.
+
+```csharp
+try
+{
+    await collection.OptimizeAsync();
+}
+catch (ZVecCompatibilityException exception)
+{
+    Console.Error.WriteLine($"{exception.RequestedFeature}: {exception.Message}");
+}
+catch (ZVecException exception)
+{
+    Console.Error.WriteLine($"ZVec error {exception.ErrorCode}: {exception.Message}");
+}
+```
+
+A missing native runtime causes `DllNotFoundException`; install a package containing the current RID or set `ZVEC_LIBRARY_PATH` to a compatible library.
+
+## Build and tests
 
 ```powershell
 dotnet build .\bindings\dotnet\OpenIndexer.ZVec.csproj -c Release
@@ -162,17 +185,23 @@ $env:ZVEC_LIBRARY_PATH = "C:\native\zvec_c_api.dll"
 dotnet test .\tests\OpenIndexer.ZVec.Tests\OpenIndexer.ZVec.Tests.csproj -c Release
 ```
 
-A suíte usa diretórios temporários e o backend ZVec real. Ela cobre criação e reabertura, persistência, CRUD, listagem, consultas simples e múltiplas, Flat, HNSW, HNSW-RaBitQ no Linux suportado, IVF, quantização INT8, inverted, FTS, filtros, `OptimizeAsync`, stats/completeness, incompatibilidade de schema, diagnóstico de plataforma/símbolo RaBitQ, validações e descarte. DiskANN e RaBitQ executam seus testes positivos somente em Linux.
+Native contributor builds require PowerShell, Git, CMake, Ninja, a clean recursive submodule checkout, and the matching platform toolchain and dependencies. Run the script on the target operating system and architecture; it is not a cross-compilation wrapper:
 
-## Limitações
+```powershell
+.\scripts\build-native.ps1 -Rid win-x64
+```
 
-- ABI fixada em ZVec C API 0.6.x; versões 0.x posteriores precisam ser revisadas antes de serem aceitas.
-- RIDs suportados dependem de uma biblioteca nativa correspondente. Os índices stock são validados também no Windows x64; HNSW-RaBitQ é validado somente com a fat library estendida Linux x64.
-- Chamadas nativas do ZVec são síncronas. O binding evita bloquear o thread chamador por offload, mas não consegue interromper uma operação nativa que já começou.
-- Alterar as opções C# depois que uma coleção foi criada não migra o índice persistido. Por padrão, `CreateOrOpenAsync` valida schema e parâmetros e falha com uma mensagem de recriação/migração explícita.
-- `OptimizeThreadCount` é configuração global do runtime ZVec e só pode ser definido pela primeira inicialização do processo. `OptimizeAsync` chama a operação nativa bloqueante em um worker; não há callback de progresso nem cancelamento depois que ela começa.
-- Stats expõem contagem de documentos e completeness de campos vetoriais. A ABI 0.6 não reporta progresso detalhado, tamanho, estado de jobs, INVERT ou FTS.
-- `EnableExtendedWildcard` é aceito na criação, mas a v0.6 não o serializa no protobuf do schema; ele volta ao default ao reabrir a coleção.
-- DiskANN é suportado oficialmente somente em Linux.
-- O backend HNSW-RaBitQ da versão fixada é Linux x86_64 + AVX2; Windows, ARM, DLL stock sem extensão, extensão com API/commit divergente e build com `RABITQ_SUPPORTED=0` são rejeitados antes da criação.
-- HNSW-RaBitQ está disponível apenas no asset `linux-x64`; o binding verifica plataforma, AVX2, versão da extensão, commit ZVec e capacidade nativa antes de criar a coleção.
+The test suite uses temporary directories and the real ZVec backend. It covers creation and reopening, persistence, CRUD, listing, single and multiple queries, Flat, HNSW, HNSW-RaBitQ on supported Linux systems, IVF, INT8 quantization, inverted indexes, FTS, filters, `OptimizeAsync`, statistics and completeness, schema incompatibility, RaBitQ platform and symbol diagnostics, validation, and disposal. Positive RaBitQ tests run only on supported Linux x64 AVX2 hosts. DiskANN currently has managed option/default coverage; functional DiskANN coverage still needs a compatible Linux runtime in CI.
+
+## Limitations
+
+- The ABI is pinned to ZVec C API 0.6.x; later 0.x versions must be reviewed before they are accepted.
+- Supported RIDs depend on a corresponding native library. Stock indexes are also validated on Windows x64; HNSW-RaBitQ is validated only with the extended Linux x64 fat library.
+- Native ZVec calls are synchronous. The binding avoids blocking the calling thread by offloading work, but it cannot interrupt a native operation after it has started.
+- Changing C# options after a collection is created does not migrate the persisted index. By default, `CreateOrOpenAsync` validates the schema and parameters and fails with an explicit recreation or migration message.
+- `OptimizeThreadCount` is a global ZVec runtime setting and can only be set by the process's first initialization. `OptimizeAsync` runs the blocking native operation on a worker; there is no progress callback or cancellation after it starts.
+- Statistics expose document counts and vector-field completeness. ABI 0.6 does not report detailed progress, size, job state, INVERT state, or FTS state.
+- `EnableExtendedWildcard` is accepted during creation, but v0.6 does not serialize it in the schema protobuf; it returns to its default after reopening the collection.
+- DiskANN is officially supported only on Linux.
+- The pinned version's HNSW-RaBitQ backend requires Linux x86_64 and AVX2. Windows, ARM, a stock DLL without the extension, an extension with a mismatched API or commit, and builds with `RABITQ_SUPPORTED=0` are rejected before collection creation.
+- HNSW-RaBitQ is available only in the `linux-x64` asset; the binding verifies the platform, AVX2 support, extension version, ZVec commit, and native capability before creating the collection.
