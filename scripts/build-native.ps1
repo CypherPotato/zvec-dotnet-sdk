@@ -37,6 +37,13 @@ try {
         throw 'Could not uniquely locate ZVEC_C_API_SOURCES in the pinned ZVec CMake file.'
     }
     $cmake = [regex]::Replace($cmake, $sourcePattern, "set(ZVEC_C_API_SOURCES`n    c_api.cc`n    zvec_rabitq_extension.cc`n)")
+
+    $versionPattern = 'git_version\(ZVEC_VERSION \$\{CMAKE_CURRENT_SOURCE_DIR\}\)'
+    if ([regex]::Matches($cmake, $versionPattern).Count -ne 1) {
+        throw 'Could not uniquely locate ZVEC_VERSION initialization in the pinned ZVec CMake file.'
+    }
+    $cmake = [regex]::Replace($cmake, $versionPattern, 'set(ZVEC_VERSION "v0.6.0")')
+
     if ($Rid -eq 'linux-x64') {
         $cmake += @'
 

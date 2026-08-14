@@ -14,6 +14,8 @@ if (-not (Test-Path $library)) { throw "Native runtime not found: $library" }
 
 if ($Rid -eq 'win-x64') {
     $exports = (& dumpbin /exports $library | Out-String)
+} elseif ($Rid -like 'linux-*') {
+    $exports = (& nm -D -g $library | Out-String)
 } else {
     $exports = (& nm -g $library | Out-String)
 }
