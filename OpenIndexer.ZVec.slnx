@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/bindings/">
+    <Project Path="bindings/dotnet/OpenIndexer.ZVec.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenIndexer.ZVec.Tests/OpenIndexer.ZVec.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,53 @@
+name: Publish NuGet
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published v-prefixed GitHub Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Download native GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir native-release
+          gh release download '${{ inputs.tag }}' --dir native-release \
+            --pattern 'zvec-native-*.zip' --pattern 'SHA256SUMS.txt'
+      - name: Stage validated native assets
+        shell: pwsh
+        run: ./scripts/stage-native-assets.ps1 -SourceDirectory native-release
+      - name: Pack from released assets
+        shell: bash
+        run: |
+          version='${{ inputs.tag }}'
+          version="${version#v}"
+          dotnet pack bindings/dotnet/OpenIndexer.ZVec.csproj \
+            --configuration Release --output artifacts/packages \
+            -p:PackageVersion="$version" -p:ContinuousIntegrationBuild=true
+      - name: Publish to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo 'NUGET_API_KEY is not configured.' >&2
+            exit 1
+          fi
+          dotnet nuget push 'artifacts/packages/*.nupkg' \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" --skip-duplicate

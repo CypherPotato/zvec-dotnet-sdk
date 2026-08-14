@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <PackageId>OpenIndexer.ZVec</PackageId>
+    <Description>Typed .NET bindings for ZVec with precompiled native runtimes for Windows x64, Linux x64/ARM64, and macOS ARM64.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/CypherPotato/zvec-dotnet-sdk</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/CypherPotato/zvec-dotnet-sdk.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>zvec;vector-database;embeddings;hnsw;rabitq</PackageTags>
+    <NativeArtifactsDirectory>$(MSBuildThisFileDirectory)..\..\artifacts\native</NativeArtifactsDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\licenses\**\*" Pack="true" PackagePath="licenses" />
+    <None Include="$(NativeArtifactsDirectory)\win-x64\zvec_c_api.dll" Pack="true" PackagePath="runtimes/win-x64/native/zvec_c_api.dll" />
+    <None Include="$(NativeArtifactsDirectory)\linux-x64\libzvec_c_api.so" Pack="true" PackagePath="runtimes/linux-x64/native/libzvec_c_api.so" />
+    <None Include="$(NativeArtifactsDirectory)\linux-arm64\libzvec_c_api.so" Pack="true" PackagePath="runtimes/linux-arm64/native/libzvec_c_api.so" />
+    <None Include="$(NativeArtifactsDirectory)\osx-arm64\libzvec_c_api.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/libzvec_c_api.dylib" />
+  </ItemGroup>
+  <Target Name="ValidateNativeRuntimes" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <ExpectedNativeRuntime Include="$(NativeArtifactsDirectory)\win-x64\zvec_c_api.dll" />
+      <ExpectedNativeRuntime Include="$(NativeArtifactsDirectory)\linux-x64\libzvec_c_api.so" />
+      <ExpectedNativeRuntime Include="$(NativeArtifactsDirectory)\linux-arm64\libzvec_c_api.so" />
+      <ExpectedNativeRuntime Include="$(NativeArtifactsDirectory)\osx-arm64\libzvec_c_api.dylib" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(ExpectedNativeRuntime.Identity)')" Text="Required native runtime is missing: %(ExpectedNativeRuntime.Identity). Download and stage the validated GitHub release assets before packing." />
+  </Target>
+</Project>

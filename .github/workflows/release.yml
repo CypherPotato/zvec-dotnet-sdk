@@ -1,0 +1,171 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v-prefixed tag to release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  native:
+    name: Native ${{ matrix.rid }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runner: windows-2022
+            file: zvec_c_api.dll
+          - rid: linux-x64
+            runner: ubuntu-24.04
+            file: libzvec_c_api.so
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+            file: libzvec_c_api.so
+          - rid: osx-arm64
+            runner: macos-14
+            file: libzvec_c_api.dylib
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install native build dependencies
+        shell: pwsh
+        run: |
+          if ('${{ matrix.rid }}' -like 'linux-*') {
+            sudo apt-get update
+            sudo apt-get install -y ninja-build libomp-dev
+          } elseif ('${{ matrix.rid }}' -eq 'osx-arm64') {
+            brew install ninja libomp
+          }
+      - name: Set up MSVC
+        if: matrix.rid == 'win-x64'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+      - name: Verify pinned ZVec source
+        shell: pwsh
+        run: |
+          $expected = 'ec8a78ee08b14a0b8c94158ffc1de42cd3f97f6d'
+          $actual = (git -C core/zvec rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Expected ZVec $expected; found $actual." }
+      - name: Build native runtime
+        shell: pwsh
+        run: ./scripts/build-native.ps1 -Rid '${{ matrix.rid }}'
+      - name: Validate native runtime and bindings
+        shell: pwsh
+        run: ./scripts/test-native.ps1 -Rid '${{ matrix.rid }}'
+      - name: Create native asset
+        shell: pwsh
+        run: |
+          $source = 'artifacts/native/${{ matrix.rid }}/${{ matrix.file }}'
+          if (-not (Test-Path $source)) { throw "Native output was not found: $source" }
+          Compress-Archive -Path $source -DestinationPath 'artifacts/zvec-native-${{ matrix.rid }}.zip' -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zvec-native-${{ matrix.rid }}
+          path: artifacts/zvec-native-${{ matrix.rid }}.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  release-native:
+    name: Publish native GitHub assets
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zvec-native-*
+          path: release-assets
+          merge-multiple: true
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem release-assets -Filter 'zvec-native-*.zip' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            } | Set-Content release-assets/SHA256SUMS.txt
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to replace immutable assets."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag \
+            --title "$RELEASE_TAG" --generate-notes \
+            --repo "$GITHUB_REPOSITORY"
+
+  package:
+    name: Pack NuGet from GitHub assets
+    needs: release-native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Download native release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir native-release
+          gh release download "$RELEASE_TAG" --dir native-release \
+            --pattern 'zvec-native-*.zip' --pattern 'SHA256SUMS.txt'
+      - name: Stage validated native assets
+        shell: pwsh
+        run: ./scripts/stage-native-assets.ps1 -SourceDirectory native-release
+      - name: Pack
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          dotnet pack bindings/dotnet/OpenIndexer.ZVec.csproj \
+            --configuration Release --output artifacts/packages \
+            -p:PackageVersion="$version" -p:ContinuousIntegrationBuild=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/packages/*.*nupkg
+          if-no-files-found: error
+      - name: Attach NuGet package to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" artifacts/packages/*.*nupkg --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --repo "$GITHUB_REPOSITORY"

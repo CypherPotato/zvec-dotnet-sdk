@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify pinned ZVec source
+        shell: pwsh
+        run: |
+          $expected = 'ec8a78ee08b14a0b8c94158ffc1de42cd3f97f6d'
+          $actual = (git -C core/zvec rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Expected ZVec $expected; found $actual." }
+      - name: Build managed bindings
+        run: dotnet build OpenIndexer.ZVec.slnx --configuration Release
+      - name: Verify formatting
+        run: dotnet format OpenIndexer.ZVec.slnx --verify-no-changes --no-restore
