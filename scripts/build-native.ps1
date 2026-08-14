@@ -56,6 +56,7 @@ endif()
         '-B', $buildDirectory,
         '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release',
+        '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
         '-DBUILD_C_BINDINGS=ON',
         '-DBUILD_PYTHON_BINDINGS=OFF',
         '-DBUILD_TESTING=OFF',
