@@ -12,12 +12,12 @@ dotnet add package OpenIndexer.ZVec
 
 Published NuGet packages are designed to include precompiled native runtimes and copy the matching asset to the application output; consumers will not need to compile ZVec:
 
-| RID | Library | HNSW-RaBitQ |
+| RID | Library | Supported indexes |
 | --- | --- | --- |
-| `win-x64` | `zvec_c_api.dll` | No |
-| `linux-x64` | `libzvec_c_api.so` | Yes, on AVX2 or newer CPUs |
-| `linux-arm64` | `libzvec_c_api.so` | No |
-| `osx-arm64` | `libzvec_c_api.dylib` | No |
+| `win-x64` | `zvec_c_api.dll` | Flat, HNSW, IVF, inverted, full-text |
+| `linux-x64` | `libzvec_c_api.so` | Flat, HNSW, HNSW-RaBitQ (AVX2 or newer), DiskANN, IVF, inverted, full-text |
+| `linux-arm64` | `libzvec_c_api.so` | Flat, HNSW, IVF, inverted, full-text |
+| `osx-arm64` | `libzvec_c_api.dylib` | Flat, HNSW, IVF, inverted, full-text |
 
 Release runtimes are built from the ZVec submodule pinned to `ec8a78ee08b14a0b8c94158ffc1de42cd3f97f6d` and include this repository's versioned ABI extension. The managed binding rejects RaBitQ before collection creation unless the process is Linux x64 with AVX2; eligible Linux hosts then pass extension version, commit, and capability checks. It never silently converts the request to Flat. Once a version is published, its native ZIP files, SHA-256 checksums, and NuGet packages will be attached to the corresponding [GitHub Release](https://github.com/CypherPotato/zvec-dotnet-sdk/releases).
 
