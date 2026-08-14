@@ -30,7 +30,7 @@ foreach ($symbol in @(
 
 $env:ZVEC_LIBRARY_PATH = $library
 try {
-    dotnet test (Join-Path $repositoryRoot 'OpenIndexer.ZVec.slnx') --configuration Release --logger 'console;verbosity=normal'
+    dotnet test (Join-Path $repositoryRoot 'tests/OpenIndexer.ZVec.Tests/OpenIndexer.ZVec.Tests.csproj') --configuration Release --logger 'console;verbosity=normal'
     if ($LASTEXITCODE -ne 0) { throw ".NET tests failed with exit code $LASTEXITCODE." }
 }
 finally {
