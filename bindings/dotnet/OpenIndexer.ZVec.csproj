@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageId>OpenIndexer.ZVec</PackageId>
     <Description>Typed .NET bindings for ZVec with precompiled native runtimes for Windows x64, Linux x64/ARM64, and macOS ARM64.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
